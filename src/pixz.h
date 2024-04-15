@@ -25,7 +25,7 @@
 #define CHUNKSIZE 4096
 
 #ifndef DEBUG
-	#define DEBUG 0
+	#define DEBUG 1
 #endif
 #if DEBUG
     #define debug(str, ...) fprintf(stderr, str "\n", ##__VA_ARGS__)
@@ -50,6 +50,7 @@
 void pixz_list(bool tar);
 void pixz_write(bool tar, uint32_t level);
 void pixz_read(bool verify, size_t nspecs, char **specs);
+int pixz_mount_main(int argc, char **argv, bool tar);
 
 
 #pragma mark UTILS

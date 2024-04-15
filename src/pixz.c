@@ -74,7 +74,7 @@ int main(int argc, char **argv) {
 	char *optend;
 	long optint;
     double optdbl;
-    while ((ch = getopt(argc, argv, "dcxli:o:tkvhp:0123456789f:q:e")) != -1) {
+    while ((ch = getopt(argc, argv, "dcxli:o:tkvhp:0123456789f:q:em")) != -1) {
         switch (ch) {
             case 'c': break;
             case 'd': op = OP_READ; break;
@@ -105,6 +105,11 @@ int main(int argc, char **argv) {
     				usage("Need a positive integer argument to -q");
     			gPipelineQSize = optint;
     			break;
+            case 'm':
+                if (argc - (optind-1) <= 2)
+                    usage("No mount options");
+                optend = argv[0], argv[0] = argv[optind-1], argv[optind-1] = optend;
+                return pixz_mount_main(argc - (optind-1), argv + (optind-1), tar);
             default:
                 if (ch >= '0' && ch <= '9') {
                     level = ch - '0';

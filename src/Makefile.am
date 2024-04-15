@@ -2,8 +2,8 @@ bin_PROGRAMS = pixz
 
 pixz_CC = $(PTHREAD_CC)
 pixz_CFLAGS = $(PTHREAD_CFLAGS) -Wall -Wno-unknown-pragmas
-pixz_CPPFLAGS = $(LIBARCHIVE_CFLAGS) $(LZMA_CFLAGS)
-pixz_LDADD = -lm $(LIBARCHIVE_LIBS) $(LZMA_LIBS) $(PTHREAD_LIBS)
+pixz_CPPFLAGS = $(LIBARCHIVE_CFLAGS) $(LZMA_CFLAGS) $(FUSE_CFLAGS)
+pixz_LDADD = -lm $(LIBARCHIVE_LIBS) $(LZMA_LIBS) $(PTHREAD_LIBS) $(FUSE_LIBS)
 
 pixz_SOURCES = \
 	common.c \
@@ -13,7 +13,8 @@ pixz_SOURCES = \
 	pixz.c \
 	pixz.h \
 	read.c \
-	write.c
+	write.c \
+	mount.c
 
 if MANPAGE
 # TODO remove when possible: This is a hack because a2x is not able to output the man pages to a

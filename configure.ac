@@ -89,6 +89,8 @@ AC_CHECK_HEADER([endian.h],
                ],
                [], [])
 
+PKG_CHECK_MODULES(FUSE, fuse)
+
 AC_CONFIG_FILES([Makefile
                  src/Makefile
                  test/Makefile])

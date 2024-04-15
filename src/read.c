@@ -65,7 +65,7 @@ static void tar_write_last(void);
 static pipeline_item_t *gRbufPI = NULL;
 static io_block_t *gRbuf = NULL;
 
-static void block_capacity(io_block_t *ib, size_t incap, size_t outcap);
+void block_capacity(io_block_t *ib, size_t incap, size_t outcap);
 
 typedef enum {
 	RBUF_ERR, RBUF_EOF, RBUF_PART, RBUF_FULL
@@ -77,7 +77,7 @@ static void rbuf_consume(size_t bytes);
 static void rbuf_dispatch(size_t bytes);
 
 static bool read_header(lzma_check *check);
-static bool read_block(bool force_stream, lzma_check check, off_t uoffset);
+bool read_block(bool force_stream, lzma_check check, off_t uoffset);
 static void read_streaming(lzma_block *block, block_type sized, off_t uoffset);
 static void read_index(void);
 static void read_footer(void);
@@ -289,7 +289,7 @@ static void wanted_files(size_t count, char **specs) {
 
 #pragma mark READ
 
-static void block_capacity(io_block_t *ib, size_t incap, size_t outcap) {
+void block_capacity(io_block_t *ib, size_t incap, size_t outcap) {
 	if (incap > ib->incap) {
 		ib->incap = incap;
 		ib->input = realloc(ib->input, incap);
@@ -380,7 +380,7 @@ static bool read_header(lzma_check *check) {
 	return true;
 }
 
-static bool read_block(bool force_stream, lzma_check check, off_t uoffset) {
+bool read_block(bool force_stream, lzma_check check, off_t uoffset) {
     lzma_filter filters[LZMA_FILTERS_MAX + 1];
     lzma_block block = { .filters = filters, .check = check, .version = 0 };
 	
