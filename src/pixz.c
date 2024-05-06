@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
     			gPipelineQSize = optint;
     			break;
             case 'm':
-                if (argc - (optind-1) <= 2)
+                if (argc - (optind-1) < 2)
                     usage("No mount options");
                 optend = argv[0], argv[0] = argv[optind-1], argv[optind-1] = optend;
                 return pixz_mount_main(argc - (optind-1), argv + (optind-1), tar);

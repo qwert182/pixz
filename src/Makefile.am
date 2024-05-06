@@ -14,7 +14,8 @@ pixz_SOURCES = \
 	pixz.h \
 	read.c \
 	write.c \
-	mount.c
+	mount.c \
+	mount_tests.c
 
 if MANPAGE
 # TODO remove when possible: This is a hack because a2x is not able to output the man pages to a
