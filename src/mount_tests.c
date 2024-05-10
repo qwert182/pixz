@@ -108,7 +108,10 @@ static lzma_ret test_lzma_code(lzma_stream *strm, lzma_action action) {
         assert(found_node->key_value.data->size == (sz)); \
     } while (0)
 
+static void tree_tests(void);
+
 void pixz_tests(void) {
+    tree_tests();
     gSingleFileDestName = "test";
     static const index_block_t test_index_blocks[] = {
         {.insize = 1000, .outsize = 1000, .inoffset = 0, .outoffset = 0, LZMA_STREAM_INIT},
@@ -555,6 +558,92 @@ void pixz_tests(void) {
     gInputMMap = NULL;
     free(uncompressed_data);
     printf("ok\n");
+}
+
+enum {
+  BLACK = 0,
+  RED = 1
+};
+
+static TREE_NODE_KEY_VALUE_TYPE keys[15];
+static unsigned keys_len;
+
+static TREE_NODE_KEY_VALUE_TYPE *key(size_t k) {
+    assert(keys_len < sizeof keys / sizeof *key);
+    keys[keys_len].offset = k;
+    keys[keys_len].data = malloc((char*)&keys[keys_len].data->bytes - (char*)keys[keys_len].data);
+    keys[keys_len].data->size = 1;
+    return &keys[keys_len++];
+}
+
+static int tree_tests_set_parent(void *data, struct tree_node *node) {
+    if (LEFT(node)) PARENT_SET(LEFT(node), node);
+    if (RIGHT(node)) PARENT_SET(RIGHT(node), node);
+    return 0;
+}
+
+static void tree_tests(void) {
+    for (int i = 0; i < 15; ++i) {
+        keys_len = 0;
+        struct tree local_tree = {
+            tree_new_node(
+                tree_new_node(
+                    tree_new_node(
+                        tree_new_node(
+                            NULL,
+                            NULL,
+                            NULL, BLACK, key(1)),
+                        tree_new_node(
+                            NULL,
+                            NULL,
+                            NULL, BLACK, key(9)),
+                        NULL, BLACK, key(5)),
+                    tree_new_node(
+                        tree_new_node(
+                            NULL,
+                            NULL,
+                            NULL, BLACK, key(55)),
+                        tree_new_node(
+                            tree_new_node(
+                                NULL,
+                                NULL,
+                                NULL, BLACK, key(65)),
+                            tree_new_node(
+                                tree_new_node(
+                                    NULL,
+                                    NULL,
+                                    NULL, RED, key(80)),
+                                NULL,
+                                NULL, BLACK, key(90)),
+                            NULL, RED, key(70)),
+                        NULL, BLACK, key(60)),
+                    NULL, RED, key(50)),
+                tree_new_node(
+                    tree_new_node(
+                        NULL,
+                        NULL,
+                        NULL, BLACK, key(110)),
+                    tree_new_node(
+                        NULL,
+                        tree_new_node(
+                            NULL,
+                            NULL,
+                            NULL, RED, key(140)),
+                        NULL, BLACK, key(130)),
+                    NULL, BLACK, key(120)),
+                NULL, BLACK, key(100)),
+            15
+        }, *tree = &decompressed_blocks;
+        memcpy(tree, &local_tree, sizeof decompressed_blocks);
+        tree_iterate_parameterized(tree, tree_tests_set_parent, NULL, 1);
+        tree_write_dot_graph(tree, NULL, NULL, NULL, NULL, NULL);
+        tree_check(tree);
+        assert(tree_delete(tree, keys[i].offset));
+        tree_write_dot_graph(tree, NULL, NULL, NULL, NULL, NULL);
+        tree_check(tree);
+        tree_free(tree);
+    }
+    memset(&decompressed_blocks, 0, sizeof decompressed_blocks);
 }
 
 #endif

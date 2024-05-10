@@ -106,7 +106,7 @@ static void tree_write_dot_graph(struct tree *tree,
 #endif
 }
 
-static void tree_check(struct tree *tree) {
+static void tree_check_parameterized(struct tree *tree, int no_check_keys) {
 #if WRITE_DOT_GRAPH
     tree_write_dot_graph(tree, NULL, NULL, NULL, NULL, NULL);
 #endif
@@ -124,9 +124,9 @@ static void tree_check(struct tree *tree) {
             struct tree_node *child = child_idx == 0 ? LEFT(node) : RIGHT(node);
             if (child) {
                 if (child_idx == 0)
-                    assert(TREE_NODE_KEY_VALUE_KEY(LEFT(node)->key_value) <= TREE_NODE_KEY_VALUE_KEY(node->key_value));
+                    assert(TREE_NODE_KEY_VALUE_KEY(LEFT(node)->key_value) <= TREE_NODE_KEY_VALUE_KEY(node->key_value) || no_check_keys);
                 else
-                    assert(TREE_NODE_KEY_VALUE_KEY(RIGHT(node)->key_value) >= TREE_NODE_KEY_VALUE_KEY(node->key_value));
+                    assert(TREE_NODE_KEY_VALUE_KEY(RIGHT(node)->key_value) >= TREE_NODE_KEY_VALUE_KEY(node->key_value) || no_check_keys);
                 assert(stack_length < (int)(sizeof stack / sizeof *stack));
                 assert(height + 1 < (int)(sizeof path / sizeof *path));
                 stack[stack_length].height = height + 1;
@@ -140,10 +140,10 @@ static void tree_check(struct tree *tree) {
 #if TREE_DO_CHECK_PATHS
         for (int i = height - 1; i >= 0; --i) {
             if (path[i+1].node == LEFT(path[i].node)) {
-                assert(TREE_NODE_KEY_VALUE_KEY(node->key_value) <= TREE_NODE_KEY_VALUE_KEY(path[i].node->key_value));
+                assert(TREE_NODE_KEY_VALUE_KEY(node->key_value) <= TREE_NODE_KEY_VALUE_KEY(path[i].node->key_value) || no_check_keys);
             } else {
                 assert(path[i+1].node == RIGHT(path[i].node));
-                assert(TREE_NODE_KEY_VALUE_KEY(node->key_value) >= TREE_NODE_KEY_VALUE_KEY(path[i].node->key_value));
+                assert(TREE_NODE_KEY_VALUE_KEY(node->key_value) >= TREE_NODE_KEY_VALUE_KEY(path[i].node->key_value) || no_check_keys);
             }
         }
         if (!LEFT(node) || !RIGHT(node)) {
@@ -164,9 +164,12 @@ static void tree_check(struct tree *tree) {
     }
     assert(length == tree->length);
 }
+
+static void tree_check(struct tree *tree) {
+    tree_check_parameterized(tree, 0);
+}
 #endif
 
-#if TESTS && 0
 static void tree_free(struct tree *tree) {
     struct tree_node *node = tree->root, *stack[100];
     int stack_length = 1; stack[0] = NULL;
@@ -184,7 +187,6 @@ static void tree_free(struct tree *tree) {
             node = stack[--stack_length];
     }
 }
-#endif
 
 static struct tree_node *tree_new_node(struct tree_node *left, struct tree_node *right, struct tree_node *parent, int red, TREE_NODE_KEY_VALUE_TYPE *key_value) {
     struct tree_node *node = malloc(sizeof *node);
@@ -278,59 +280,6 @@ static struct tree_node *tree_traverse_iterate(struct tree_node *node, TREE_NODE
         traverse_context->parent = parent;
     return node;
 }
-
-/*static struct tree_node *tree_traverse_iterate(struct tree_node *node, TREE_NODE_KEY_TYPE key,
-                                               struct tree_traverse_context *traverse_context,
-                                               enum tree_traverse_context_action update_context,
-                                               enum tree_traverse_direction forward)
-{
-    int found = 0;
-    struct tree_node *parent = node ? PARENT(node) : traverse_context->parent;
-    if (node && (forward ? RIGHT(node) : LEFT(node))) {
-        parent = node;
-        node = forward ? RIGHT(node) : LEFT(node);
-        while (forward ? LEFT(node) : RIGHT(node)) {
-            parent = node;
-            node = forward ? LEFT(node) : RIGHT(node);
-        }
-        found = 1;
-    } else if (node && parent) {
-        struct tree_node *search_node = node;
-        for (;;) {
-            assert(search_node == LEFT(parent) || search_node == RIGHT(parent));
-            if (search_node == (forward ? LEFT(parent) : RIGHT(parent))) {
-                node = parent; parent = PARENT(node);
-                found = 1;
-                break;
-            } else {
-                search_node = parent;
-                if ((parent = PARENT(search_node)) == NULL)
-                    break;
-            }
-        }
-    } else if (!node && parent) {
-        for (;;) {
-            int cmp = TREE_NODE_KEY_CMP(key, TREE_NODE_KEY_VALUE_KEY(parent->key_value));
-            if (cmp != 0 && (cmp > 0) == forward) {
-                node = parent;
-                if ((parent = PARENT(node)) == NULL)
-                    return NULL;
-            } else {
-                node = parent;
-                break;
-            }
-        }
-        found = 1;
-    }
-    if (!found) {
-        if (node)
-            parent = node;
-        node = NULL;
-    }
-    if (update_context)
-        traverse_context->parent = parent;
-    return node;
-}*/
 
 static struct tree_node *tree_next(struct tree_node *node, TREE_NODE_KEY_TYPE key,
                                    struct tree_traverse_context *traverse_context,
@@ -515,13 +464,16 @@ static int tree_delete(struct tree *tree, TREE_NODE_KEY_TYPE key) {
             RIGHT_SET(parent, node_to_delete);
 
         if (LEFT(node_to_delete))
-            assert(PARENT(LEFT(node_to_delete)) == node_to_delete);
+            PARENT_SET(LEFT(node_to_delete), node_to_delete);
         if (RIGHT(node_to_delete))
-            assert(PARENT(RIGHT(node_to_delete)) == node_to_delete);
+            PARENT_SET(RIGHT(node_to_delete), node_to_delete);
         if (LEFT(node))
             PARENT_SET(LEFT(node), node);
         if (RIGHT(node))
             PARENT_SET(RIGHT(node), node);
+#if TREE_DO_CHECK
+        tree_check_parameterized(tree, 1);
+#endif
     }
 #if WRITE_DOT_GRAPH
     tree_write_dot_graph(tree, node_to_delete, PARENT(node_to_delete), NULL, NULL, NULL);
@@ -697,7 +649,7 @@ fin:
 }
 #endif
 
-static int tree_iterate(struct tree *tree, int (*func)(void *data, struct tree_node *), void *data) {
+static int tree_iterate_parameterized(struct tree *tree, int (*func)(void *data, struct tree_node *), void *data, int no_check) {
     struct tree_node *node = tree->root;
     struct tree_node *stack[100];
     int stack_length = 0;
@@ -707,8 +659,8 @@ static int tree_iterate(struct tree *tree, int (*func)(void *data, struct tree_n
         if (node) {
             assert(stack_length < (int)(sizeof stack / sizeof *stack));
             stack[stack_length++] = node;
-            assert(!LEFT(node) || node == PARENT(LEFT(node)));
-            assert(!RIGHT(node) || node == PARENT(RIGHT(node)));
+            assert(no_check || !LEFT(node) || node == PARENT(LEFT(node)));
+            assert(no_check || !RIGHT(node) || node == PARENT(RIGHT(node)));
             node = LEFT(node);
         } else {
             node = stack[--stack_length];
@@ -718,4 +670,8 @@ static int tree_iterate(struct tree *tree, int (*func)(void *data, struct tree_n
         }
     }
     return res;
+}
+
+static int tree_iterate(struct tree *tree, int (*func)(void *data, struct tree_node *), void *data) {
+    return tree_iterate_parameterized(tree, func, data, 0);
 }

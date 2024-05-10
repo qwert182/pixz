@@ -162,6 +162,7 @@ struct decompressed_block_data {
 
 struct decompressed_block {
     size_t offset;
+    time_t last_access_time;
     struct decompressed_block_data *data;
 };
 
@@ -218,6 +219,8 @@ static const size_t cache_max_size = (size_t)4 << 30;
 static const size_t cache_clean_target_size = cache_max_size - cache_max_size / 4;
 
 struct cache_cleanup_if_needed_t {
+    struct tree_node **nodes;
+    size_t nodes_length;
     size_t total_size;
 };
 
@@ -225,16 +228,33 @@ static int cache_cleanup_if_needed_cb(void *data, struct tree_node *node) {
     struct cache_cleanup_if_needed_t *d = data;
     assert(d->total_size <= SIZE_MAX - node->key_value.data->size);
     d->total_size += node->key_value.data->size;
+    assert(d->nodes_length < decompressed_blocks.length);
+    d->nodes[d->nodes_length++] = node;
+    return 0;
+}
+
+static int cache_cleanup_if_needed_nodes_access_time_and_offset_cmp(const void *ap, const void *bp) {
+    const struct tree_node *const *app = ap, *const *bpp = bp, *a = *app, *b = *bpp;
+    if (a->key_value.last_access_time < b->key_value.last_access_time) return -1;
+    if (a->key_value.last_access_time > b->key_value.last_access_time) return 1;
+    if (a->key_value.offset < b->key_value.offset) return -1;
+    if (a->key_value.offset > b->key_value.offset) return 1;
     return 0;
 }
 
 static void cache_cleanup_if_needed(size_t preserve_block_offset) {
-    struct cache_cleanup_if_needed_t data = {0};
-    int res = tree_iterate(&decompressed_blocks, cache_cleanup_if_needed_cb, &data); assert(res == 0);
-    assert(cache_size == data.total_size);
     if (cache_size <= cache_max_size)
         return;
     printf("cache blocks: %lu, size: %lf MB, cleaning...\n", decompressed_blocks.length, cache_size / (1024 * 1024.0));
+
+    struct cache_cleanup_if_needed_t data = {
+        malloc(decompressed_blocks.length * sizeof *data.nodes),
+    };
+    int res = tree_iterate(&decompressed_blocks, cache_cleanup_if_needed_cb, &data); assert(res == 0);
+    assert(cache_size == data.total_size);
+    assert(decompressed_blocks.length == data.nodes_length);
+
+#if 0
     struct tree_traverse_context search_ctx; tree_traverse_context_init(&search_ctx);
     struct tree_node *node = tree_search(decompressed_blocks.root, 0, &search_ctx);
     if (!node)
@@ -248,7 +268,17 @@ static void cache_cleanup_if_needed(size_t preserve_block_offset) {
         }
         node = next_node;
     }
-    printf("  became blocks: %lu, size: %lf MB\n", decompressed_blocks.length, cache_size / (1024 * 1024.0)); fflush(stdout);
+#else
+    qsort(data.nodes, data.nodes_length, sizeof *data.nodes, cache_cleanup_if_needed_nodes_access_time_and_offset_cmp);
+    for (size_t i = 0; cache_size > cache_clean_target_size && i < data.nodes_length; ++i) {
+        if (data.nodes[i]->key_value.offset != preserve_block_offset) {
+            cache_size -= data.nodes[i]->key_value.data->size;
+            res = tree_delete(&decompressed_blocks, data.nodes[i]->key_value.offset); assert(res);
+        }
+    }
+#endif
+    free(data.nodes);
+    printf("      blocks: %lu, size: %lf MB\n", decompressed_blocks.length, cache_size / (1024 * 1024.0)); fflush(stdout);
     clock_gettime(CLOCK_MONOTONIC, &t_last_report);
 }
 
@@ -263,6 +293,10 @@ static size_t read_data_cached(char *buf, size_t size, size_t offset, enum read_
     size_t len = gIndexBlocks[gIndexBlocksSize - 1].outoffset + gIndexBlocks[gIndexBlocksSize - 1].outsize;
     size_t preserve_block_offset = (size_t)-1;
     int were_some_additions = 0;
+
+    struct timespec t_now;
+    clock_gettime(CLOCK_MONOTONIC, &t_now);
+
     if (offset < len) {
         if (size > len - offset)
             size = len - offset;
@@ -283,6 +317,7 @@ static size_t read_data_cached(char *buf, size_t size, size_t offset, enum read_
                 size_t offset_diff = offset - cached_node->key_value.offset;
                 assert(offset_diff < cached_node->key_value.data->size);
                 size_t cached_size = MIN(remaining_size, cached_node->key_value.data->size - offset_diff);
+                cached_node->key_value.last_access_time = t_now.tv_sec;
                 if (copy) {
                     memcpy(buf, cached_node->key_value.data->bytes + offset_diff, cached_size);
                     buf += cached_size;
@@ -382,7 +417,7 @@ static size_t read_data_cached(char *buf, size_t size, size_t offset, enum read_
                     assert(block_size);
                     struct decompressed_block_data *block_data = malloc(block_size + ((char*)&block_data->bytes - (char*)block_data));
                     block_data->size = block_size;
-                    struct decompressed_block out_block = {decompression_offset, block_data};
+                    struct decompressed_block out_block = {decompression_offset, t_now.tv_sec, block_data};
                     cache_size += block_size;
                     tree_insert(&decompressed_blocks, &out_block, &search_ctx);
                     were_some_additions = 1;
@@ -449,8 +484,6 @@ static size_t read_data_cached(char *buf, size_t size, size_t offset, enum read_
     if (were_some_additions)
         cache_cleanup_if_needed(preserve_block_offset);
 #if !TESTS
-    static struct timespec t_now;
-    clock_gettime(CLOCK_MONOTONIC, &t_now);
     if (t_now.tv_sec - t_last_report.tv_sec > 60) {
         memcpy(&t_last_report, &t_now, sizeof t_last_report);
         fflush(stderr);
@@ -1024,21 +1057,25 @@ int pixz_mount_main(int argc, char **argv, bool tar) {
     if (fseeko(gInFile, 0, SEEK_END) == -1) return 1;
     size_t in_file_len = ftello(gInFile);
     int in_file_fd = fileno(gInFile);
-    for (void *hint = NULL;;) {
-        gInputMMap = mmap(hint, in_file_len, PROT_READ, MAP_SHARED, in_file_fd, 0);
-        if (gInputMMap == MAP_FAILED)
-            die("Can't mmap: %d", errno);
-        if (in_file_len >= 1 << 30 && ((size_t)gInputMMap & ((1 << 30) - 1))) {
-            if (hint == NULL)
-                hint = gInputMMap - ((size_t)gInputMMap & ((1 << 30) - 1));
-            else
-                hint += 1 << 30;
-            if (munmap(gInputMMap, in_file_len))
+    static const size_t page_sizes[3] = {4096, 2 << 20, 1 << 30};
+    size_t page_size;
+    for (int ps_idx = sizeof page_sizes / sizeof *page_sizes - 1; ps_idx > 0; --ps_idx)
+        if (in_file_len >= (page_size = page_sizes[ps_idx]))
+            break;
+    void *mmap_hint = NULL;
+    if (page_size != 4096) {
+        void *free_mapping = mmap(NULL, in_file_len + page_size - 1, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        if (free_mapping != MAP_FAILED) {
+            if (munmap(free_mapping, in_file_len + page_size - 1))
                 die("Can't unmap");
-            continue;
+            mmap_hint = (void*)(((size_t)free_mapping + page_size - 1) & ~(page_size - 1));
         }
-        break;
     }
+    gInputMMap = mmap(mmap_hint, in_file_len, PROT_READ, MAP_SHARED, in_file_fd, 0);
+    if (gInputMMap == MAP_FAILED)
+        die("Can't mmap: %d", errno);
+    madvise(gInputMMap, in_file_len, MADV_HUGEPAGE);
+    madvise(gInputMMap, in_file_len, MADV_DONTDUMP);
 
     int ret;
     if (tar) {
