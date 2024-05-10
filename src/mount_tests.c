@@ -138,7 +138,7 @@ void pixz_tests(void) {
 
     {
         assert(options.read_ahead == 1);
-        assert(options.read_ahead_no_split_by_read_start_offsets == 1);
+        assert(options.read_ahead_no_split_at_read_start_offsets == 1);
 
         printf("test (offset = %u, size = %u)\n", offset = 4, size = 8);
         memset(test_buf, 0, uncompressed_data_len);
@@ -162,7 +162,7 @@ void pixz_tests(void) {
         ASSERT_TEST_LZMA_CODE_CALL(4, 512, 128);
 
         options.read_ahead = 0;
-        options.read_ahead_no_split_by_read_start_offsets = 0;
+        options.read_ahead_no_split_at_read_start_offsets = 0;
         tree_delete(&decompressed_blocks, 256); cache_size -= 128;
 
         printf("test (offset = %u, size = %u)\n", offset = 260, size = 1);
@@ -193,7 +193,7 @@ void pixz_tests(void) {
         ASSERT_TEST_LZMA_CODE_CALL(10, 1, 1);
 
         options.read_ahead = 1;
-        options.read_ahead_no_split_by_read_start_offsets = 1;
+        options.read_ahead_no_split_at_read_start_offsets = 1;
         tree_delete(&decompressed_blocks, 0); cache_size -= 1;
 
         printf("test (offset = %u, size = %u)\n", offset = 900, size = 1);
@@ -241,7 +241,7 @@ void pixz_tests(void) {
     memcpy(gIndexBlocks, test_index_blocks, gIndexBlocksSize * sizeof *gIndexBlocks);
     test_lzma_code_calls_length = 0;
 
-    options.read_ahead_no_split_by_read_start_offsets = 0;
+    options.read_ahead_no_split_at_read_start_offsets = 0;
     options.read_ahead = 1;
 
     {
